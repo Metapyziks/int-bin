@@ -2,9 +2,13 @@
 #include <string.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/stat.h>
+#include <sys/mman.h>
 
 #define MAX_INPUT_FILES 256
-#define BUFFER_SIZE 256
+#define BUFFER_SIZE 2048
 #define BIN_COUNT 65536
 
 int parse_arguments(int argc, char** argv,
@@ -44,13 +48,6 @@ int parse_arguments(int argc, char** argv,
 	return 1;
 }
 
-int next_power_of_two(int value)
-{
-	int power = 1;
-	while (power < value) power << 1;
-	return power;
-}
-
 int main(int argc, char** argv)
 {
 	int inputFilePathsCount;
@@ -65,37 +62,63 @@ int main(int argc, char** argv)
 	uint32_t bins[BIN_COUNT];
 	char buffer[BUFFER_SIZE];
 
-	int firstBin = BIN_COUNT;
-	int lastBin = 0;
+	memset(bins, 0, sizeof(uint32_t) * BIN_COUNT);
 
 	for (int i = 0; i < inputFilePathsCount; ++i)
 	{
 		char* filePath = inputFilePaths[i];
 
-		FILE* file = fopen(filePath, "r");
-		if (file == NULL)
+		struct stat st;
+		if (stat(filePath, &st))
+		{
+			fprintf(stderr, "Unable to find file size of \"%s\", exiting.\n", filePath);
+			return 1;
+		}
+
+		size_t fileSize = st.st_size;
+
+		int file = open(filePath, O_RDONLY, 0);
+		if (file == -1)
 		{
 			fprintf(stderr, "Unable to read from file \"%s\", exiting.\n", filePath);
 			return 1;
 		}
 
-		while (fgets(buffer, sizeof(buffer), file))
+		void* map = mmap(NULL, fileSize, PROT_READ, MAP_PRIVATE | MAP_POPULATE, file, 0);
+
+		if (map == MAP_FAILED)
 		{
-			int value = strtol(buffer, (char**) NULL, 10);
-
-			if (value < 0) continue;
-			if (value >= BIN_COUNT) continue;
-
-			if (value < firstBin) firstBin = value;
-			if (value > lastBin) lastBin = value;
-			
-			++(bins[value]);
+			close(file);
+			fprintf(stderr, "Error when mapping file, exiting.\n");
+			return 1;
 		}
+
+		char* start = (char*) map;
+		char* end = NULL;
+		int32_t value;
+
+		while ((value = strtol(start, &end, 10)) != 0)
+		{
+			start = end + 1;
+			if (value < BIN_COUNT) ++(bins[value]);
+		}
+
+		if (munmap(map, fileSize))
+		{
+			close(file);
+			fprintf(stderr, "Error when unmapping file, exiting.\n");
+			return 1;
+		}
+
+		close(file);
 	}
 
-	for (int i = firstBin; i <= lastBin; ++i)
+	for (int i = 0; i < BIN_COUNT; ++i)
 	{
-		printf("%i:%i\n", i, bins[i]);
+		if (bins[i] > 0)
+		{
+			printf("%i:%i\n", i, bins[i]);
+		}
 	}
 
 	return 0;
