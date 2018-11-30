@@ -8,7 +8,6 @@
 #include <sys/mman.h>
 
 #define MAX_INPUT_FILES 256
-#define BUFFER_SIZE 2048
 #define BIN_COUNT 65536
 
 int parse_arguments(int argc, char** argv,
@@ -60,7 +59,6 @@ int main(int argc, char** argv)
 	}
 
 	uint32_t bins[BIN_COUNT];
-	char buffer[BUFFER_SIZE];
 
 	memset(bins, 0, sizeof(uint32_t) * BIN_COUNT);
 
